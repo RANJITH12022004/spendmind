@@ -1,26 +1,54 @@
 name: Android CI
 
+# This repo ships source + a prebuilt APK (not a full Gradle Android project:
+# no gradlew, settings.gradle, or version catalogs). Validate shipped assets
+# instead of running ./gradlew build.
+
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  build:
-
+  validate:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+      - uses: actions/checkout@v4
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      - name: Verify core Android / web assets
+        run: |
+          set -euo pipefail
+          required=(
+            "AndroidManifest.xml"
+            "MainActivity.java"
+            "DatabaseManager.java"
+            "ParserEngine.java"
+            "AnalyticsEngine.java"
+            "Models.java"
+            "activity_main.xml"
+            "index.html"
+            "app.js"
+            "Spend Mind.apk"
+          )
+          missing=0
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              missing=1
+            else
+              echo "OK: $f"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          apk_size=$(wc -c < "Spend Mind.apk")
+          echo "APK size: ${apk_size} bytes"
+          if [ "$apk_size" -lt 1000 ]; then
+            echo "::error::Spend Mind.apk looks empty or corrupt"
+            exit 1
+          fi
+          echo "Asset validation passed."
